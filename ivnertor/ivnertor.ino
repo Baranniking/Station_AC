@@ -11,7 +11,13 @@ XPT2046_Touchscreen ts(TOUCH_CS);
 TFT_eSPI tft = TFT_eSPI();
 
 // флаги для меню
-bool viewMainMenu = true;
+bool onGridToHome = false;
+bool OnOffAC = false;
+// переменные для цвета иконок
+ int color_ac = TFT_RED;
+ int color_bat = TFT_GREEN;
+ int color_home =  TFT_GOLD;
+
 
 // ------------------- КООРДИНАТЫ И ПАРАМЕТРЫ -------------------
 int ac_bat = 120;   // длина шкалы от сети до аккум (горизонталь)
@@ -59,25 +65,85 @@ void setup() {
 
 void loop() {
     
-    flowACtoBat(TFT_GREEN, speedACBat);
-    mainMenu(TFT_BLUE, TFT_YELLOW, TFT_GREEN);
-
-    if(ts.touched()){;
-    uint16_t x, y;
-    uint8_t z;
-    ts.readData(&x, &y, &z);
-    if(z>200){
-    Serial.print("Touch at: ");
-    Serial.print("x = ");
-    Serial.print(x);
-    Serial.print(", y = ");
-    Serial.print(y);
-    Serial.print(", z =");
-    Serial.println(z);
-    delay(200);
-    }
-    }
+ mainMenu(color_ac, color_bat, color_home);
+ 
+ if(OnOffAC){
+    color_ac = TFT_BLUE;
+ }
+ if(!OnOffAC){
+    color_ac = TFT_RED;
+ }
+ if(onGridToHome && OnOffAC){
+    flowACtoHome(TFT_RED, 100);
+ }
+ 
 }
+
+// =============================================================
+
+
+
+
+//------ Главное меню
+    void mainMenu(int color_ac, int color_bat, int color_home){
+    // Иконки
+    tft.drawBitmap(128, 10, grid_icon, 64, 64, color_ac);
+    tft.drawBitmap(256, 100, house_icon, 64, 64, color_home);
+    tft.drawBitmap(0, 100, bat_icon, 64, 64, color_bat);
+
+    // Подписи
+    tft.setTextColor(color_ac, TFT_BLACK);
+    tft.setTextSize(2);
+    tft.setCursor(115, 10);
+    tft.println("AC");
+
+    tft.setTextColor(color_home, TFT_BLACK);
+    tft.setCursor(230, 90);
+    tft.println("Home");
+
+    tft.setTextColor(color_bat, TFT_BLACK);
+    tft.setCursor(55, 90);
+    tft.println("Bat");
+   
+   // обработка касания
+     TS_Point p;
+     if(ts.touched()){ //определяем касание
+     p = ts.getPoint(); //получаем координаты
+     }
+     if(p.z > 200){
+        int x = map(p.x, 3600, 500, 0, 320);
+        int y = map(p.y, 3500, 500, 0, 240);
+    
+        Serial.print("Touch at: ");
+        Serial.print("x = ");
+        Serial.print(x);
+        Serial.print(", y = ");
+        Serial.println(y);
+     // ------обработка нажатия на иконку електростолб
+    if(x >= 118 && x<= 200 && y >= 10 && y <= 80){ 
+        OnOffAC = !OnOffAC;
+        flowHeightToHome = 0; //сбро счетчика анимации перетока
+        flowWeightToHome = 0;
+         tft.fillRect(196, 32, 90, 2, TFT_BLACK);
+         tft.fillRect(286, 32, 2, 50, TFT_BLACK);
+       
+     //-------обработка нажатия на иконку дом
+    }
+    if(x >= 250 && x <= 320 && y >= 90 && y <= 170){ 
+        onGridToHome = !onGridToHome;
+        flowHeightToHome = 0; //сбро счетчика анимации перетока
+        flowWeightToHome = 0;
+         tft.fillRect(196, 32, 90, 2, TFT_BLACK);
+         tft.fillRect(286, 32, 2, 50, TFT_BLACK);
+    }
+ 
+    delay(300);
+    }
+
+    
+}
+
+
 
 // ==============================================================
 //переток от сети к батареи
@@ -104,7 +170,7 @@ void flowACtoBat(uint16_t color, int speed) {
             flowHeight += 6;
         } 
         else if(flowWeight <=50 && flowActoBatEnd){
-            tft.fillRect(30, 32 + flowWeight, 2, 2, TFT_RED);
+            tft.fillRect(286, 32 + flowWeight, 2, 2, TFT_RED);
             flowWeight += 6;
         }
         else {
@@ -145,7 +211,7 @@ void flowACtoHome(uint16_t color, int speed) {
             flowWeightToHome += 6;
         }
         else {
-             flowACtoHomeEnd = false;
+            flowACtoHomeEnd = false;
             flowHeightToHome = 0;
             flowWeightToHome = 0;
         }
@@ -180,26 +246,4 @@ void flowBatToHome(uint16_t color, int speed) {
 }
 
 //================================================================
-// главное меню
-void mainMenu(int color_ac, int color_bat, int color_home){
-    // Иконки
-    tft.drawBitmap(128, 10, grid_icon, 64, 64, color_ac);
-    tft.drawBitmap(256, 100, house_icon, 64, 64, color_home);
-    tft.drawBitmap(0, 100, bat_icon, 64, 64, color_bat);
 
-    // Подписи
-    tft.setTextColor(color_ac, TFT_BLACK);
-    tft.setTextSize(2);
-    tft.setCursor(115, 10);
-    tft.println("AC");
-
-    tft.setTextColor(color_home, TFT_BLACK);
-    tft.setCursor(230, 90);
-    tft.println("Home");
-
-    tft.setTextColor(color_bat, TFT_BLACK);
-    tft.setCursor(55, 90);
-    tft.println("Bat");
-
-    viewMainMenu = true;
-}
