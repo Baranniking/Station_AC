@@ -9,6 +9,16 @@
 XPT2046_Touchscreen ts(TOUCH_CS);
 TFT_eSPI tft = TFT_eSPI();
 
+#define pinGridDetect 27
+
+//------------------логичские флаги по железу и переменные
+//Флаги
+bool Grid_On = false;//статус сети
+bool On_Invertor = false;
+//переменные для логики
+int countPushButtonHome = 0;
+
+
 // Флаги для меню
 bool onGridToHome = false;
 bool OnOffAC = false;
@@ -19,6 +29,7 @@ int color_ac = TFT_RED;
 int color_bat = TFT_GREEN;
 int color_home = TFT_GOLD;
 int menu_color = TFT_BLACK;
+int colorDetectAC = TFT_RED;
 
 // ------------------- КООРДИНАТЫ И ПАРАМЕТРЫ -------------------
 int ac_bat = 120;
@@ -37,10 +48,16 @@ bool flowBatToHomeEnd = false;
 bool flowActoBatEnd = false;
 bool flowACtoHomeEnd = false;
 
+//Флаги очистки меню
+bool flagCleanBatToHome = false;
+bool flagCleanACtoHome = false;
+bool flagCleanACtoBat = false;
+
 // ------------------- ТАЙМЕРЫ ДЛЯ millis() -------------------
 unsigned long lastFlowTimeACBat = 0;
 unsigned long lastFlowTimeACHome = 0;
 unsigned long lastFlowTimeBatHome = 0;
+unsigned long lastPressTime = 0;
 
 // ------------------- СКОРОСТЬ АНИМАЦИИ (мс) -------------------
 int speedACBat = 80;
@@ -56,27 +73,59 @@ void setup() {
   tft.init();
   tft.setRotation(1);
   tft.fillScreen(TFT_BLACK);
+  mainMenu(color_ac, color_bat, color_home); //главное меню
+  pinMode(pinGridDetect, INPUT_PULLUP);
+  
 }
 
 // ==============================================================
 
 void loop() {
-  mainMenu(color_ac, color_bat, color_home);
-  detectTouch();
+  detectVoltaGridAc(); //статус внешней сети 220В
 
-  color_ac = OnOffAC ? TFT_BLUE : TFT_RED;
+  detectTouch(); //обработка касания
 
-  if (onGridToHome && OnOffAC) {
-    flowACtoHome(TFT_RED, 100);
-  }
+  logicaWorkInvertor();
 
-  if (onGridToBat && OnOffAC) {
-    flowACtoBat(TFT_GREEN, 100);
-  }
+  mainMenu(color_ac, color_bat, color_home); //главное меню  
+  
 }
 
-// ==============================================================
 
+//================Логика по железу=============================
+// -------------детектор напряжения
+
+void detectVoltaGridAc(){
+Grid_On = (digitalRead(pinGridDetect) == LOW);
+if(!Grid_On){
+  //если нету напряжение то сбрасываем флаги и тд.
+  countPushButtonHome = 0;
+}
+}
+
+//включение наружной сети 220в
+void logicaWorkInvertor(){
+  if(OnOffAC){
+    //поднимаем пины
+    color_ac = TFT_BLUE;
+  }
+  else{
+    //опускаем пины
+    color_ac = TFT_RED;
+    countPushButtonHome = 0;
+  }
+  //подача питания с сети через инвертор обратно в дом
+ if(Grid_On && !On_Invertor && countPushButtonHome == 1 && OnOffAC){
+    //проверки, поднятия и опускание пинов
+    flowACtoHome(TFT_RED, 100);
+    flagCleanACtoHome = false;   
+  }else if(!flagCleanACtoHome){
+    cleanFlowACtoHome();
+    
+  }
+}
+//================Дисплей и сенсор=============================
+// ==============================================================
 void mainMenu(int color_ac, int color_bat, int color_home) {
   tft.drawBitmap(128, 10, grid_icon, 64, 64, color_ac);
   tft.drawBitmap(256, 100, house_icon, 64, 64, color_home);
@@ -100,7 +149,12 @@ void mainMenu(int color_ac, int color_bat, int color_home) {
   tft.setCursor(130, 200);
   tft.println("Menu");
 
+  //индикатор сети
+  if(Grid_On){
   tft.fillRect(290, 10, 15, 15, TFT_GREEN);
+  }else{
+  tft.fillRect(290, 10, 15, 15, TFT_RED);
+  }
 }
 
 void detectTouch() {
@@ -118,27 +172,27 @@ void detectTouch() {
     Serial.print(", y = ");
     Serial.println(y);
 
-    if (x >= 118 && x <= 200 && y >= 10 && y <= 80) {
+    if (x >= 118 && x <= 200 && y >= 10 && y <= 80) {//кнопка сеть
+    if (millis() - lastPressTime > 300) {
       OnOffAC = !OnOffAC;
-      flowHeightToHome = 0;
-      flowWeightToHome = 0;
-      tft.fillRect(196, 32, 90, 2, TFT_BLACK);
-      tft.fillRect(286, 32, 2, 50, TFT_BLACK);
+      lastPressTime = millis();
+    }
     }
 
-    if (x >= 250 && x <= 320 && y >= 90 && y <= 170) {
-      onGridToHome = !onGridToHome;
-      flowHeightToHome = 0;
-      flowWeightToHome = 0;
-      tft.fillRect(196, 32, 90, 2, TFT_BLACK);
-      tft.fillRect(286, 32, 2, 50, TFT_BLACK);
+    if (x >= 250 && x <= 320 && y >= 90 && y <= 170) {//кнопка дом
+    
+     if (millis() - lastPressTime > 300) { // не чаще 1 раза в 300 мс
+      countPushButtonHome = (countPushButtonHome + 1) % 3;
+      lastPressTime = millis();
     }
+      
+         }
 
-    if (x >= 0 && x <= 74 && y >= 100 && y <= 174) {
+    if (x >= 0 && x <= 74 && y >= 100 && y <= 174) {//кнопка бат
       onGridToBat = !onGridToBat;
     }
 
-    if (x >= 130 && x <= 190 && y >= 200 && y <= 240) {
+    if (x >= 130 && x <= 190 && y >= 200 && y <= 240) {//кнопка меню
       menu_color = TFT_RED;
     }
 
@@ -208,8 +262,6 @@ void flowACtoHome(uint16_t color, int speed) {
   }
 }
 
-// ==============================================================
-
 void flowBatToHome(uint16_t color, int speed) {
   unsigned long currentMillis = millis();
   if (currentMillis - lastFlowTimeBatHome >= speed) {
@@ -230,3 +282,47 @@ void flowBatToHome(uint16_t color, int speed) {
     }
   }
 }
+
+//==============================================================
+//очистка перетока от сети к батареи
+void cleanFlowACtoBat(){
+      flagCleanACtoBat = true;
+      flowHeight = 0;
+      flowWeight = 0;
+      tft.fillRect(30, 32, 98, 2, TFT_BLACK);
+      tft.fillRect(30, 32, 2, 50, TFT_BLACK);
+}
+//==============================================================
+//очистика перетока от батареи к дому
+void cleanFlowBatToHome(){
+     flagCleanBatToHome = true;
+     flowHeightBatToHome = 0;
+     tft.fillRect(64, 128, 182, 2, TFT_BLACK);
+
+}
+
+//==============================================================
+//очистка перетока от сети к кнопке дом 
+void cleanFlowACtoHome(){
+      flagCleanACtoHome = true;
+      flowHeightToHome = 0;
+      flowWeightToHome = 0;
+      tft.fillRect(196, 32, 90, 2, TFT_BLACK);
+      tft.fillRect(286, 32, 2, 50, TFT_BLACK);
+}
+// ==============================================================
+//очистка кнопки "сеть"
+      void cleanIconAC(){
+      flowHeightToHome = 0;
+      flowWeightToHome = 0;
+      flowHeight = 0;
+      flowWeight = 0;
+      tft.fillRect(196, 32, 90, 2, TFT_BLACK);
+      tft.fillRect(286, 32, 2, 50, TFT_BLACK);
+      }
+// ==============================================================
+//очистка кнопки "меню"
+void cleanIconMenu(){
+   menu_color = TFT_RED;
+}
+//=================================================================
